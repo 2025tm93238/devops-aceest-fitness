@@ -1,0 +1,54 @@
+name: CI
+
+# Triggered on every push and pull request, as required by the assignment.
+on:
+  push:
+  pull_request:
+
+jobs:
+  # Stage 1: Build & Lint, then run the test suite on the runner.
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint (flake8)
+        run: flake8 .
+
+      - name: Compile check (syntax errors)
+        run: python -m compileall app.py fitness.py
+
+      - name: Run tests
+        run: pytest -q
+
+  # Stage 2: Docker image assembly + run pytest INSIDE the container.
+  docker:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build production image
+        run: docker build --target production -t aceest-fitness:ci .
+
+      - name: Run pytest inside the containerized environment
+        run: |
+          docker build --target test -t aceest-fitness:test .
+          docker run --rm aceest-fitness:test
+
+      - name: Smoke-test the running container
+        run: |
+          docker run -d -p 5000:5000 --name aceest aceest-fitness:ci
+          sleep 3
+          curl --fail http://localhost:5000/health
+          docker rm -f aceest
