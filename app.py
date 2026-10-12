@@ -97,6 +97,7 @@ def create_app(database=None):
             endpoints=[
                 "GET  /health",
                 "GET  /programs",
+                "GET  /stats",
                 "POST /clients",
                 "GET  /clients",
                 "GET  /clients/<name>",
@@ -113,6 +114,19 @@ def create_app(database=None):
     @app.get("/programs")
     def list_programs():
         return jsonify(PROGRAMS)
+
+    @app.get("/stats")
+    def gym_stats():
+        """Gym-wide totals for a quick dashboard view."""
+        db = get_db()
+        clients = db.execute("SELECT COUNT(*) FROM clients").fetchone()[0]
+        workouts = db.execute("SELECT COUNT(*) FROM workouts").fetchone()[0]
+        metrics = db.execute("SELECT COUNT(*) FROM metrics").fetchone()[0]
+        return jsonify(
+            total_clients=clients,
+            total_workouts=workouts,
+            total_metrics=metrics,
+        )
 
     @app.post("/clients")
     def create_client():

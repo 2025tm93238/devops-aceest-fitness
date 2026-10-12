@@ -71,6 +71,18 @@ def test_programs_listing(client):
     assert "Beginner (BG)" in resp.get_json()
 
 
+def test_gym_stats(client):
+    # empty gym
+    body = client.get("/stats").get_json()
+    assert body == {"total_clients": 0, "total_workouts": 0, "total_metrics": 0}
+    # after adding a client and a workout, totals update
+    _make_client(client, name="Asha")
+    client.post("/clients/Asha/workouts", json={"workout_type": "Strength"})
+    body = client.get("/stats").get_json()
+    assert body["total_clients"] == 1
+    assert body["total_workouts"] == 1
+
+
 # ---------- client CRUD ----------
 
 def test_create_client_computes_calories(client):

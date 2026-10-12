@@ -58,7 +58,7 @@ aceest-fitness/
 ├── requirements.txt           # Runtime dependencies (Flask, gunicorn)
 ├── requirements-dev.txt       # Dev/CI dependencies (pytest, flake8)
 ├── tests/
-│   └── test_app.py            # Pytest suite (15 tests: logic + endpoints)
+│   └── test_app.py            # Pytest suite (16 tests: logic + endpoints)
 ├── Dockerfile                 # Multi-stage build: base → test → production
 ├── .dockerignore
 ├── .github/workflows/main.yml # GitHub Actions CI pipeline
@@ -122,7 +122,7 @@ flake8 .
 pytest -q           # quiet; use `pytest -v` for a per-test breakdown
 ```
 
-Expected result: **`15 passed`**.
+Expected result: **`16 passed`**.
 
 The suite covers both the **pure domain logic** (BMI, calorie calculation,
 category boundaries, input validation) and **every API endpoint** end-to-end
@@ -150,7 +150,7 @@ curl http://localhost:5000/health
 
 # Run the test suite inside a container (as the CI pipeline does)
 docker build --target test -t aceest-fitness:test .
-docker run --rm aceest-fitness:test          # -> 15 passed
+docker run --rm aceest-fitness:test          # -> 16 passed
 ```
 
 **Docker efficiency notes:** a `python:3.12-slim` base, `--no-cache-dir` installs,
@@ -206,7 +206,7 @@ tests in a separate controlled environment — a secondary quality gate.
 |-----------|-------------------------------|
 | **Application Integrity** | Flask API functions as specified; verified live and via 15 tests |
 | **VCS Maturity** | Logically structured, descriptive commits on a public repo |
-| **Testing Coverage** | Pytest covers domain logic + every endpoint (15 cases) |
+| **Testing Coverage** | Pytest covers domain logic + every endpoint (16 cases) |
 | **Docker Efficiency** | Multi-stage, slim base, non-root, cached layers (~126 MB) |
 | **Pipeline Reliability** | Jenkins BUILD completes without errors; Actions passes build+test on every push |
 | **Documentation Clarity** | This README (setup, manual tests, CI/CD overview) |
