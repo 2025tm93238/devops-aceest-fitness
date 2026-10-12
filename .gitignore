@@ -7,3 +7,6 @@ venv/
 .venv/
 *.egg-info/
 .DS_Store
+
+# Internal working notes - never publish
+SUBMISSION_GUIDE.md
