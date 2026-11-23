@@ -39,11 +39,18 @@ def seed_admin(app):
 
     The password comes from the ADMIN_PASSWORD environment variable, which the
     Kubernetes manifests populate from a Secret.
+
+    Several gunicorn workers start at the same moment against the same database,
+    so the insert must be idempotent: INSERT OR IGNORE lets exactly one worker win
+    instead of the others crashing on the primary-key constraint.
     """
     with app.app_context():
-        exists = get_db().execute("SELECT 1 FROM users WHERE username='admin'").fetchone()
-        if not exists:
-            create_user("admin", os.environ.get("ADMIN_PASSWORD", "admin"), "Admin")
+        db = get_db()
+        db.execute(
+            "INSERT OR IGNORE INTO users (username, password_hash, role) VALUES (?, ?, ?)",
+            ("admin", generate_password_hash(os.environ.get("ADMIN_PASSWORD", "admin")), "Admin"),
+        )
+        db.commit()
 
 
 def require_role(*roles):

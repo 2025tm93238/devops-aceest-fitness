@@ -78,8 +78,14 @@ def _apply_migrations(db):
     for table, columns in MIGRATIONS.items():
         existing = {row["name"] for row in db.execute(f"PRAGMA table_info({table})")}
         for column, col_type in columns.items():
-            if column not in existing:
+            if column in existing:
+                continue
+            try:
                 db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+            except sqlite3.OperationalError as exc:
+                # Another worker added it between our check and the ALTER.
+                if "duplicate column" not in str(exc):
+                    raise
 
 
 def init_db(app):
