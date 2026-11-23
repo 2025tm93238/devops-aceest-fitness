@@ -4,6 +4,16 @@ All notable changes to the ACEest Fitness & Gym API. Versions follow
 [Semantic Versioning](https://semver.org/); each release is a git tag
 (`vX.Y.Z`) and a Docker Hub image tag of the same name.
 
+## [3.0.0]
+### Added
+- PDF client report (`reports.py`, ported from `Aceestver-3.1.2` / `3.2.4`):
+  `GET /clients/<name>/report.pdf` with profile, BMI, membership, progress and
+  recent workouts, rendered in memory (no files written in the container).
+- `pytest-cov` for coverage reporting.
+### Changed
+- **Breaking (runtime):** new dependency `fpdf2` — images must be rebuilt.
+- Summary aggregation shared between `/summary` and the PDF report.
+
 ## [2.1.0]
 ### Added
 - AI-style weekly workout plan generator (`planner.py`, ported from
