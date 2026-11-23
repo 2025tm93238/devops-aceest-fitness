@@ -25,6 +25,9 @@ All notable changes to the ACEest Fitness & Gym API. Versions follow
 ### Fixed
 - Updating an existing client no longer deletes and re-creates its row
   (`INSERT OR REPLACE` replaced by an upsert), preserving id and membership.
+- Container crashed on start-up when gunicorn workers booted together against a
+  fresh database (race on the admin seed and the migration); both are now
+  idempotent and covered by a multi-process regression test.
 
 ## [1.1.0]
 ### Added
