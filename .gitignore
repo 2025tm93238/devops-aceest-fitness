@@ -10,3 +10,10 @@ venv/
 
 # Internal working notes - never publish
 SUBMISSION_GUIDE.md
+
+# Editor / local artefacts
+*.code-workspace
+coverage.xml
+htmlcov/
+reports/
+.coverage
