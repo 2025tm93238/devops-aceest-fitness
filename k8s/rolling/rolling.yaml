@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aceest-rolling
+  namespace: aceest
+  labels: {app: aceest, strategy: rolling, track: rolling}
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: {app: aceest, strategy: rolling, track: rolling}
+  minReadySeconds: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1        # one extra pod at a time
+      maxUnavailable: 0  # never drop below 3 ready pods -> zero downtime
+  template:
+    metadata:
+      labels: {app: aceest, strategy: rolling, track: rolling}
+    spec:
+      containers:
+        - name: app
+          image: 2025tm93238/aceest-fitness:v2.1.0
+          imagePullPolicy: IfNotPresent
+          # One gunicorn worker per pod: Kubernetes scales by adding pods, and the
+          # VM is small. --access-logfile - makes every request visible in pod logs.
+          command: ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--access-logfile", "-", "app:app"]
+          ports:
+            - {name: http, containerPort: 5000}
+          env:
+            - {name: DEPLOYMENT_TRACK, value: rolling}
+            - name: SECRET_KEY
+              valueFrom: {secretKeyRef: {name: aceest-secrets, key: SECRET_KEY}}
+            - name: ADMIN_PASSWORD
+              valueFrom: {secretKeyRef: {name: aceest-secrets, key: ADMIN_PASSWORD}}
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 25m, memory: 64Mi}
+            limits: {memory: 256Mi}
+          volumeMounts:
+            - {name: data, mountPath: /app/data}
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aceest-rolling
+  namespace: aceest
+  labels: {app: aceest}
+spec:
+  type: NodePort
+  selector: {app: aceest, strategy: rolling}
+  ports:
+    - {name: http, port: 5000, targetPort: http, nodePort: 30080}
