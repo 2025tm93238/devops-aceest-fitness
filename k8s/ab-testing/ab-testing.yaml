@@ -1,0 +1,185 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aceest-ab-a
+  namespace: aceest
+  labels: {app: aceest, strategy: ab, track: variant-a}
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: {app: aceest, strategy: ab, track: variant-a}
+  template:
+    metadata:
+      labels: {app: aceest, strategy: ab, track: variant-a}
+    spec:
+      containers:
+        - name: app
+          image: 2025tm93238/aceest-fitness:v2.1.0
+          imagePullPolicy: IfNotPresent
+          # One gunicorn worker per pod: Kubernetes scales by adding pods, and the
+          # VM is small. --access-logfile - makes every request visible in pod logs.
+          command: ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--access-logfile", "-", "app:app"]
+          ports:
+            - {name: http, containerPort: 5000}
+          env:
+            - {name: DEPLOYMENT_TRACK, value: variant-a}
+            - name: SECRET_KEY
+              valueFrom: {secretKeyRef: {name: aceest-secrets, key: SECRET_KEY}}
+            - name: ADMIN_PASSWORD
+              valueFrom: {secretKeyRef: {name: aceest-secrets, key: ADMIN_PASSWORD}}
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 25m, memory: 64Mi}
+            limits: {memory: 256Mi}
+          volumeMounts:
+            - {name: data, mountPath: /app/data}
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aceest-ab-b
+  namespace: aceest
+  labels: {app: aceest, strategy: ab, track: variant-b}
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: {app: aceest, strategy: ab, track: variant-b}
+  template:
+    metadata:
+      labels: {app: aceest, strategy: ab, track: variant-b}
+    spec:
+      containers:
+        - name: app
+          image: 2025tm93238/aceest-fitness:v3.0.0
+          imagePullPolicy: IfNotPresent
+          # One gunicorn worker per pod: Kubernetes scales by adding pods, and the
+          # VM is small. --access-logfile - makes every request visible in pod logs.
+          command: ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--access-logfile", "-", "app:app"]
+          ports:
+            - {name: http, containerPort: 5000}
+          env:
+            - {name: DEPLOYMENT_TRACK, value: variant-b}
+            - name: SECRET_KEY
+              valueFrom: {secretKeyRef: {name: aceest-secrets, key: SECRET_KEY}}
+            - name: ADMIN_PASSWORD
+              valueFrom: {secretKeyRef: {name: aceest-secrets, key: ADMIN_PASSWORD}}
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 25m, memory: 64Mi}
+            limits: {memory: 256Mi}
+          volumeMounts:
+            - {name: data, mountPath: /app/data}
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aceest-ab-a
+  namespace: aceest
+  labels: {app: aceest}
+spec:
+  selector: {app: aceest, strategy: ab, track: variant-a}
+  ports:
+    - {name: http, port: 5000, targetPort: http}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aceest-ab-b
+  namespace: aceest
+  labels: {app: aceest}
+spec:
+  selector: {app: aceest, strategy: ab, track: variant-b}
+  ports:
+    - {name: http, port: 5000, targetPort: http}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aceest-ab-router-conf
+  namespace: aceest
+data:
+  default.conf: |
+    upstream variant_a { server aceest-ab-a:5000; }
+    upstream variant_b { server aceest-ab-b:5000; }
+
+    # Matching is case-insensitive. Group B is chosen by header (X-Variant: B) or cookie (variant=B); everyone else gets A.
+    map $cookie_variant $ab_by_cookie { default variant_a; B variant_b; }
+    map $http_x_variant $ab_upstream  { default $ab_by_cookie; B variant_b; A variant_a; }
+
+    server {
+        listen 8080;
+        location = /router-health { return 200 "ok\n"; }
+        location / {
+            proxy_pass http://$ab_upstream;
+            proxy_set_header Host $host;
+            add_header X-AB-Variant $ab_upstream always;
+        }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aceest-ab-router
+  namespace: aceest
+  labels: {app: aceest-router, strategy: ab}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: aceest-router, strategy: ab}
+  template:
+    metadata:
+      labels: {app: aceest-router, strategy: ab}
+      annotations:
+        # Bump to restart nginx after editing the ConfigMap.
+        aceest/config-rev: "1"
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          ports:
+            - {name: http, containerPort: 8080}
+          readinessProbe:
+            httpGet: {path: /router-health, port: http}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {memory: 64Mi}
+          volumeMounts:
+            - {name: conf, mountPath: /etc/nginx/conf.d}
+      volumes:
+        - name: conf
+          configMap: {name: aceest-ab-router-conf}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aceest-ab-router
+  namespace: aceest
+  labels: {app: aceest}
+spec:
+  type: NodePort
+  selector: {app: aceest-router, strategy: ab}
+  ports:
+    - {name: http, port: 80, targetPort: http, nodePort: 30083}

@@ -1,0 +1,193 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aceest-shadow-primary
+  namespace: aceest
+  labels: {app: aceest, strategy: shadow, track: primary}
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: {app: aceest, strategy: shadow, track: primary}
+  template:
+    metadata:
+      labels: {app: aceest, strategy: shadow, track: primary}
+    spec:
+      containers:
+        - name: app
+          image: 2025tm93238/aceest-fitness:v2.1.0
+          imagePullPolicy: IfNotPresent
+          # One gunicorn worker per pod: Kubernetes scales by adding pods, and the
+          # VM is small. --access-logfile - makes every request visible in pod logs.
+          command: ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--access-logfile", "-", "app:app"]
+          ports:
+            - {name: http, containerPort: 5000}
+          env:
+            - {name: DEPLOYMENT_TRACK, value: primary}
+            - name: SECRET_KEY
+              valueFrom: {secretKeyRef: {name: aceest-secrets, key: SECRET_KEY}}
+            - name: ADMIN_PASSWORD
+              valueFrom: {secretKeyRef: {name: aceest-secrets, key: ADMIN_PASSWORD}}
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 25m, memory: 64Mi}
+            limits: {memory: 256Mi}
+          volumeMounts:
+            - {name: data, mountPath: /app/data}
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aceest-shadow-candidate
+  namespace: aceest
+  labels: {app: aceest, strategy: shadow, track: shadow}
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: {app: aceest, strategy: shadow, track: shadow}
+  template:
+    metadata:
+      labels: {app: aceest, strategy: shadow, track: shadow}
+    spec:
+      containers:
+        - name: app
+          image: 2025tm93238/aceest-fitness:v3.0.0
+          imagePullPolicy: IfNotPresent
+          # One gunicorn worker per pod: Kubernetes scales by adding pods, and the
+          # VM is small. --access-logfile - makes every request visible in pod logs.
+          command: ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--access-logfile", "-", "app:app"]
+          ports:
+            - {name: http, containerPort: 5000}
+          env:
+            - {name: DEPLOYMENT_TRACK, value: shadow}
+            - name: SECRET_KEY
+              valueFrom: {secretKeyRef: {name: aceest-secrets, key: SECRET_KEY}}
+            - name: ADMIN_PASSWORD
+              valueFrom: {secretKeyRef: {name: aceest-secrets, key: ADMIN_PASSWORD}}
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 25m, memory: 64Mi}
+            limits: {memory: 256Mi}
+          volumeMounts:
+            - {name: data, mountPath: /app/data}
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aceest-shadow-primary
+  namespace: aceest
+  labels: {app: aceest}
+spec:
+  selector: {app: aceest, strategy: shadow, track: primary}
+  ports:
+    - {name: http, port: 5000, targetPort: http}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aceest-shadow-candidate
+  namespace: aceest
+  labels: {app: aceest}
+spec:
+  selector: {app: aceest, strategy: shadow, track: shadow}
+  ports:
+    - {name: http, port: 5000, targetPort: http}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aceest-shadow-router-conf
+  namespace: aceest
+data:
+  default.conf: |
+    upstream primary   { server aceest-shadow-primary:5000; }
+    upstream candidate { server aceest-shadow-candidate:5000; }
+
+    server {
+        listen 8080;
+        location = /router-health { return 200 "ok\n"; }
+
+        # Users are always answered by the primary. Every request is also copied to
+        # the candidate; its response is discarded, so it can never affect users.
+        location / {
+            mirror /__shadow;
+            mirror_request_body on;
+            proxy_pass http://primary;
+            proxy_set_header Host $host;
+            add_header X-Served-By primary always;
+        }
+        location = /__shadow {
+            internal;
+            proxy_pass http://candidate$request_uri;
+            proxy_set_header X-Shadow-Request "true";
+            proxy_connect_timeout 2s;
+            proxy_read_timeout 5s;
+        }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aceest-shadow-router
+  namespace: aceest
+  labels: {app: aceest-router, strategy: shadow}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: aceest-router, strategy: shadow}
+  template:
+    metadata:
+      labels: {app: aceest-router, strategy: shadow}
+      annotations:
+        # Bump to restart nginx after editing the ConfigMap.
+        aceest/config-rev: "1"
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          ports:
+            - {name: http, containerPort: 8080}
+          readinessProbe:
+            httpGet: {path: /router-health, port: http}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {memory: 64Mi}
+          volumeMounts:
+            - {name: conf, mountPath: /etc/nginx/conf.d}
+      volumes:
+        - name: conf
+          configMap: {name: aceest-shadow-router-conf}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aceest-shadow-router
+  namespace: aceest
+  labels: {app: aceest}
+spec:
+  type: NodePort
+  selector: {app: aceest-router, strategy: shadow}
+  ports:
+    - {name: http, port: 80, targetPort: http, nodePort: 30084}
