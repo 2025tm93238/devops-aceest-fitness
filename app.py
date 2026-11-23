@@ -18,8 +18,9 @@ import membership
 from auth import require_role
 from db import client_row, close_db, get_db, init_db
 from fitness import PROGRAMS, bmi_category, calculate_bmi, calculate_calories
-from membership import start_trial
+from membership import membership_state, start_trial
 from planner import generate_plan
+from reports import build_client_report
 from version import __version__
 
 ENDPOINTS = [
@@ -37,6 +38,7 @@ ENDPOINTS = [
     "POST /clients/<name>/progress",
     "GET  /clients/<name>/summary",
     "POST /clients/<name>/program/generate",
+    "GET  /clients/<name>/report.pdf",
     "DELETE /clients/<name>            (Admin)",
     "GET  /export/clients.csv",
     "POST /auth/login",
@@ -60,6 +62,28 @@ DELETE_CLIENT_QUERIES = (
     "DELETE FROM progress WHERE client_name=?",
     "DELETE FROM clients WHERE name=?",
 )
+
+
+def summary_data(name):
+    """Aggregate progress, workout and metric figures for one client."""
+    db = get_db()
+    weeks, avg = db.execute(
+        "SELECT COUNT(*), AVG(adherence) FROM progress WHERE client_name=?", (name,)
+    ).fetchone()
+    workouts = db.execute(
+        "SELECT COUNT(*) FROM workouts WHERE client_name=?", (name,)
+    ).fetchone()[0]
+    last_metric = db.execute(
+        "SELECT date, weight, waist, bodyfat FROM metrics "
+        "WHERE client_name=? ORDER BY date DESC LIMIT 1",
+        (name,),
+    ).fetchone()
+    return {
+        "weeks_logged": weeks,
+        "average_adherence": round(avg, 1) if avg is not None else 0,
+        "workouts_logged": workouts,
+        "last_metric": dict(last_metric) if last_metric else None,
+    }
 
 
 def version_info():
@@ -268,24 +292,37 @@ def create_app(database=None):
         row = client_row(name)
         if row is None:
             return jsonify(error="client not found"), 404
-        db = get_db()
-        weeks, avg = db.execute(
-            "SELECT COUNT(*), AVG(adherence) FROM progress WHERE client_name=?", (name,)
-        ).fetchone()
-        workouts = db.execute(
-            "SELECT COUNT(*) FROM workouts WHERE client_name=?", (name,)
-        ).fetchone()[0]
-        last_metric = db.execute(
-            "SELECT date, weight, waist, bodyfat FROM metrics "
-            "WHERE client_name=? ORDER BY date DESC LIMIT 1",
+        return jsonify(client=dict(row), **summary_data(name))
+
+    @app.get("/clients/<name>/report.pdf")
+    def client_report(name):
+        """Downloadable PDF report (ported from Aceestver-3.1.2 / 3.2.4)."""
+        row = client_row(name)
+        if row is None:
+            return jsonify(error="client not found"), 404
+        client = dict(row)
+        bmi = None
+        if client["height"] and client["weight"]:
+            value = calculate_bmi(client["weight"], client["height"])
+            bmi = {"bmi": value, "category": bmi_category(value)[0]}
+        recent = get_db().execute(
+            "SELECT date, workout_type, duration_min, notes FROM workouts "
+            "WHERE client_name=? ORDER BY date DESC, id DESC LIMIT 10",
             (name,),
-        ).fetchone()
-        return jsonify(
-            client=dict(row),
-            weeks_logged=weeks,
-            average_adherence=round(avg, 1) if avg is not None else 0,
-            workouts_logged=workouts,
-            last_metric=dict(last_metric) if last_metric else None,
+        ).fetchall()
+        pdf = build_client_report(
+            client=client,
+            bmi=bmi,
+            membership=membership_state(client["membership_status"], client["membership_end"]),
+            summary=summary_data(name),
+            workouts=[dict(r) for r in recent],
+            generated_on=date.today().isoformat(),
+        )
+        filename = f"{name.replace(' ', '_')}_report.pdf"
+        return Response(
+            pdf,
+            mimetype="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
 
     @app.post("/clients/<name>/program/generate")
