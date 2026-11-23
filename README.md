@@ -4,12 +4,38 @@
 
 A **Flask-based REST API** for managing gym clients, training programs, workouts,
 body metrics and weekly progress — wrapped in a complete, automated DevOps
-workflow: **Git/GitHub → Pytest → Docker → GitHub Actions → Jenkins**.
+workflow: **Git/GitHub → Pytest → SonarQube → Docker → Docker Hub → Jenkins → Kubernetes**.
 
 The application auto-computes each client's daily calorie target from their
 program and bodyweight, and classifies BMI with a risk note. The core business
 logic is isolated from the web and database layers so it is easy to test, and
 the whole service is containerized for "write once, run anywhere" consistency.
+
+---
+
+## Assignment 2 — Continuous delivery at a glance
+
+| | |
+|---|---|
+| Releases | v1.0.0 → v1.1.0 → v2.0.0 → v2.1.0 → v3.0.0 → v3.0.1 ([CHANGELOG](CHANGELOG.md)); each a reviewed PR + git tag; originals in [`versions/`](versions/) |
+| Tests | 71 Pytest cases, 99% line coverage, run inside the container |
+| Code quality | SonarQube "ACEest gate": coverage ≥ 80%, reliability A, security A, duplication ≤ 3% |
+| Images | [`2025tm93238/aceest-fitness`](https://hub.docker.com/r/2025tm93238/aceest-fitness/tags) — one tag per version + `latest` + one per Jenkins build |
+| Pipeline | [`Jenkinsfile`](Jenkinsfile): Poll SCM (2 min) → lint → tests → SonarQube → quality gate → artifacts → image → container smoke test → Docker Hub → rolling update → smoke test → **auto-rollback** |
+| Deployments | [`k8s/`](k8s/README.md): rolling (30080), blue-green (30081), canary (30082), A/B (30083), shadow (30084) on Minikube |
+
+**Running it on the lab VM** (everything outside `~/workspace` is wiped when the VM stops):
+
+```bash
+./infra/vm/setup.sh               # kubectl, minikube, SonarQube, Jenkins access (idempotent)
+./infra/vm/sonar-init.sh          # once: admin password, quality gate, Jenkins token
+./infra/publish-all-versions.sh   # once, after `docker login`: push every version tag
+./k8s/scripts/deploy-all.sh       # all five deployment strategies
+./k8s/scripts/urls.sh             # endpoint per strategy
+```
+
+Jenkins job: *Pipeline script from SCM* → this repo, branch `*/main`, credentials
+`dockerhub-creds` (Docker Hub user + token) and `sonar-token` (SonarQube token).
 
 ---
 
@@ -215,9 +241,10 @@ tests in a separate controlled environment — a secondary quality gate.
 
 ## Tech stack
 
-Python 3.12 · Flask · gunicorn · SQLite · Pytest · flake8 · Docker (multi-stage)
-· GitHub Actions · Jenkins.
+Python 3.12 · Flask · gunicorn · SQLite · fpdf2 · Pytest + pytest-cov · flake8 ·
+SonarQube · Docker (multi-stage) · Docker Hub · GitHub Actions · Jenkins ·
+Kubernetes (Minikube) · nginx.
 
 ---
 
-*Author: Teja (BITS ID 2025TM93238) — Introduction to DevOps, Assignment 1.*
+*Author: Teja (BITS ID 2025TM93238) — Introduction to DevOps, Assignments 1 and 2.*
