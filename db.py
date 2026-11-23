@@ -49,6 +49,8 @@ CREATE TABLE IF NOT EXISTS metrics (
 );
 """
 
+CLIENT_NOT_FOUND = "client not found"
+
 
 def get_db():
     """Return a per-request SQLite connection, creating it on first use."""
@@ -58,7 +60,7 @@ def get_db():
     return g.db
 
 
-def close_db(exception=None):
+def close_db(_exception=None):
     db = g.pop("db", None)
     if db is not None:
         db.close()

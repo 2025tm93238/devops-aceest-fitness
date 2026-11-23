@@ -20,10 +20,17 @@ CMD ["pytest", "-q"]
 
 # ---- production: lean image, runs as a non-root user via gunicorn ----
 FROM base AS production
+ARG APP_VERSION=dev
+LABEL org.opencontainers.image.title="ACEest Fitness & Gym API" \
+      org.opencontainers.image.version="${APP_VERSION}" \
+      org.opencontainers.image.source="https://github.com/2025tm93238/devops-aceest-fitness"
 RUN useradd --create-home appuser \
     && mkdir -p /app/data \
     && chown -R appuser:appuser /app/data
 USER appuser
 ENV DATABASE=/app/data/aceest_fitness.db
 EXPOSE 5000
+# Docker-level health check (Kubernetes uses its own probes on the same endpoint).
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=2)"
 CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "app:app"]

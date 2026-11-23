@@ -46,17 +46,18 @@ def generate_plan(program_name, experience, seed=None):
         raise ValueError(f"experience must be one of {sorted(EXPERIENCE_LEVELS)}")
     sets_range, reps_range, days = EXPERIENCE_LEVELS[level]
     focus = focus_for_program(program_name)
-    # Not security sensitive: randomness only varies exercise selection.
+    # Not security sensitive: randomness only varies which exercises are picked,
+    # and a seedable generator is required for reproducible plans (S2245 reviewed).
     rng = random.Random(seed)  # NOSONAR
     per_day = 3 if days < 4 else 4
 
     plan = []
     for day in WEEK_DAYS[:days]:
-        for exercise in rng.sample(EXERCISE_POOL[focus], k=per_day):
+        for exercise in rng.sample(EXERCISE_POOL[focus], k=per_day):  # NOSONAR
             plan.append({
                 "day": day,
                 "exercise": exercise,
-                "sets": rng.randint(*sets_range),
-                "reps": rng.randint(*reps_range),
+                "sets": rng.randint(*sets_range),  # NOSONAR
+                "reps": rng.randint(*reps_range),  # NOSONAR
             })
     return {"focus": focus, "experience": level, "days_per_week": days, "plan": plan}

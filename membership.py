@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from flask import Blueprint, jsonify, request
 
 from auth import ROLES, require_role
-from db import client_row, get_db
+from db import CLIENT_NOT_FOUND, client_row, get_db
 
 TRIAL_DAYS = 30
 MAX_RENEWAL_MONTHS = 24
@@ -58,7 +58,7 @@ def start_trial(name):
 def get_membership(name):
     row = client_row(name)
     if row is None:
-        return jsonify(error="client not found"), 404
+        return jsonify(error=CLIENT_NOT_FOUND), 404
     state = membership_state(row["membership_status"], row["membership_end"])
     return jsonify(name=name, **state)
 
@@ -68,7 +68,7 @@ def get_membership(name):
 def renew_membership(name):
     row = client_row(name)
     if row is None:
-        return jsonify(error="client not found"), 404
+        return jsonify(error=CLIENT_NOT_FOUND), 404
     data = request.get_json(silent=True) or {}
     months = data.get("months", 1)
     if not isinstance(months, int) or not 1 <= months <= MAX_RENEWAL_MONTHS:
