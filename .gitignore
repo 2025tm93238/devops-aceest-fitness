@@ -17,3 +17,8 @@ coverage.xml
 htmlcov/
 reports/
 .coverage
+
+# CI / SonarQube outputs
+dist/
+.scannerwork/
+.sonar/

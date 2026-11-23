@@ -13,3 +13,8 @@ versions/
 k8s/
 Jenkinsfile
 sonar-project.properties
+infra/
+reports/
+dist/
+.scannerwork/
+.sonar/
