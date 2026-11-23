@@ -9,3 +9,7 @@ venv/
 *.md
 docs/
 .DS_Store
+versions/
+k8s/
+Jenkinsfile
+sonar-project.properties
