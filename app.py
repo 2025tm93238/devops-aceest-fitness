@@ -13,8 +13,12 @@ from datetime import date, datetime
 
 from flask import Flask, Response, jsonify, request
 
+import auth
+import membership
+from auth import require_role
 from db import client_row, close_db, get_db, init_db
 from fitness import PROGRAMS, bmi_category, calculate_bmi, calculate_calories
+from membership import start_trial
 from version import __version__
 
 ENDPOINTS = [
@@ -31,7 +35,13 @@ ENDPOINTS = [
     "GET  /clients/<name>/metrics",
     "POST /clients/<name>/progress",
     "GET  /clients/<name>/summary",
+    "DELETE /clients/<name>            (Admin)",
     "GET  /export/clients.csv",
+    "POST /auth/login",
+    "GET  /auth/me                     (token)",
+    "POST /auth/users                  (Admin)",
+    "GET  /clients/<name>/membership",
+    "POST /clients/<name>/membership/renew (token)",
 ]
 
 CSV_COLUMNS = ["name", "age", "height", "weight", "program", "calories",
@@ -39,6 +49,14 @@ CSV_COLUMNS = ["name", "age", "height", "weight", "program", "calories",
 CSV_QUERY = (
     "SELECT name, age, height, weight, program, calories, target_weight, "
     "target_adherence FROM clients ORDER BY name"
+)
+
+# Child rows first, then the client itself.
+DELETE_CLIENT_QUERIES = (
+    "DELETE FROM workouts WHERE client_name=?",
+    "DELETE FROM metrics WHERE client_name=?",
+    "DELETE FROM progress WHERE client_name=?",
+    "DELETE FROM clients WHERE name=?",
 )
 
 
@@ -61,8 +79,14 @@ def version_info():
 def create_app(database=None):
     app = Flask(__name__)
     app.config["DATABASE"] = database or os.environ.get("DATABASE", "aceest_fitness.db")
+    # Signs auth tokens. Must be identical across replicas, so in Kubernetes it
+    # is injected from a Secret; the fallback is for local development only.
+    app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-only-insecure-key")
     app.teardown_appcontext(close_db)
     init_db(app)
+    auth.seed_admin(app)
+    app.register_blueprint(auth.bp)
+    app.register_blueprint(membership.bp)
 
     @app.get("/health")
     def health():
@@ -100,9 +124,14 @@ def create_app(database=None):
 
         db = get_db()
         db.execute(
-            """INSERT OR REPLACE INTO clients
+            """INSERT INTO clients
                (name, age, height, weight, program, calories, target_weight, target_adherence)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(name) DO UPDATE SET
+                 age=excluded.age, height=excluded.height, weight=excluded.weight,
+                 program=excluded.program, calories=excluded.calories,
+                 target_weight=excluded.target_weight,
+                 target_adherence=excluded.target_adherence""",
             (
                 name,
                 data.get("age"),
@@ -115,6 +144,7 @@ def create_app(database=None):
             ),
         )
         db.commit()
+        start_trial(name)
         return jsonify(dict(client_row(name))), 201
 
     @app.get("/clients")
@@ -128,6 +158,17 @@ def create_app(database=None):
         if row is None:
             return jsonify(error="client not found"), 404
         return jsonify(dict(row))
+
+    @app.delete("/clients/<name>")
+    @require_role("Admin")
+    def delete_client(name):
+        if client_row(name) is None:
+            return jsonify(error="client not found"), 404
+        db = get_db()
+        for query in DELETE_CLIENT_QUERIES:
+            db.execute(query, (name,))
+        db.commit()
+        return "", 204
 
     @app.get("/clients/<name>/bmi")
     def client_bmi(name):

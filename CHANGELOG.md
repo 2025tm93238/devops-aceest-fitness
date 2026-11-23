@@ -4,6 +4,25 @@ All notable changes to the ACEest Fitness & Gym API. Versions follow
 [Semantic Versioning](https://semver.org/); each release is a git tag
 (`vX.Y.Z`) and a Docker Hub image tag of the same name.
 
+## [2.0.0]
+### Added
+- Role-based authentication (`auth.py`, ported from `Aceestver-3.2.4` login):
+  `POST /auth/login` issues a signed, time-limited bearer token; `GET /auth/me`;
+  `POST /auth/users` (Admin) creates Admin/Trainer accounts. Passwords are hashed.
+- Default `admin` account seeded on first start; password from `ADMIN_PASSWORD`.
+- Membership management (`membership.py`): new clients get a 30-day Active trial,
+  `GET /clients/<name>/membership`, `POST /clients/<name>/membership/renew` (token).
+- `DELETE /clients/<name>` (Admin only).
+- In-place schema migration so v1.x databases upgrade without data loss.
+### Changed
+- **Breaking:** `SECRET_KEY` must be set (identically on all replicas) in production.
+### Fixed
+- Updating an existing client no longer deletes and re-creates its row
+  (`INSERT OR REPLACE` replaced by an upsert), preserving id and membership.
+- Container crashed on start-up when gunicorn workers booted together against a
+  fresh database (race on the admin seed and the migration); both are now
+  idempotent and covered by a multi-process regression test.
+
 ## [1.1.0]
 ### Added
 - `version.py` as the single source of truth for the app version.
