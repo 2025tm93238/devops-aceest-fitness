@@ -6,29 +6,7 @@ against a throwaway SQLite database.
 
 import pytest
 
-from app import create_app
 from fitness import bmi_category, calculate_bmi, calculate_calories
-
-
-@pytest.fixture
-def client(tmp_path):
-    """A Flask test client backed by a fresh database per test."""
-    app = create_app(database=str(tmp_path / "test.db"))
-    app.config["TESTING"] = True
-    with app.test_client() as test_client:
-        yield test_client
-
-
-def _make_client(client, name="Asha", **overrides):
-    payload = {
-        "name": name,
-        "age": 30,
-        "height": 170,
-        "weight": 70,
-        "program": "Muscle Gain (MG) - PPL",
-    }
-    payload.update(overrides)
-    return client.post("/clients", json=payload)
 
 
 # ---------- pure domain logic ----------
@@ -73,8 +51,8 @@ def test_programs_listing(client):
 
 # ---------- client CRUD ----------
 
-def test_create_client_computes_calories(client):
-    resp = _make_client(client)
+def test_create_client_computes_calories(client, make_client):
+    resp = make_client()
     assert resp.status_code == 201
     body = resp.get_json()
     assert body["name"] == "Asha"
@@ -95,9 +73,9 @@ def test_get_missing_client_returns_404(client):
     assert client.get("/clients/Ghost").status_code == 404
 
 
-def test_create_then_fetch_and_list(client):
-    _make_client(client, name="Asha")
-    _make_client(client, name="Ravi")
+def test_create_then_fetch_and_list(client, make_client):
+    make_client(name="Asha")
+    make_client(name="Ravi")
     assert client.get("/clients/Asha").status_code == 200
     names = [c["name"] for c in client.get("/clients").get_json()]
     assert names == ["Asha", "Ravi"]  # ordered by name
@@ -105,8 +83,8 @@ def test_create_then_fetch_and_list(client):
 
 # ---------- BMI endpoint ----------
 
-def test_client_bmi_endpoint(client):
-    _make_client(client)
+def test_client_bmi_endpoint(client, make_client):
+    make_client()
     body = client.get("/clients/Asha/bmi").get_json()
     assert body["bmi"] == 24.2
     assert body["category"] == "Normal"
@@ -114,8 +92,8 @@ def test_client_bmi_endpoint(client):
 
 # ---------- workouts, metrics, progress, summary ----------
 
-def test_workout_logging_and_history(client):
-    _make_client(client)
+def test_workout_logging_and_history(client, make_client):
+    make_client()
     resp = client.post(
         "/clients/Asha/workouts",
         json={"workout_type": "Strength", "duration_min": 60, "notes": "heavy day"},
@@ -126,14 +104,14 @@ def test_workout_logging_and_history(client):
     assert history[0]["workout_type"] == "Strength"
 
 
-def test_workout_requires_type(client):
-    _make_client(client)
+def test_workout_requires_type(client, make_client):
+    make_client()
     resp = client.post("/clients/Asha/workouts", json={"duration_min": 30})
     assert resp.status_code == 400
 
 
-def test_metrics_and_progress_feed_summary(client):
-    _make_client(client)
+def test_metrics_and_progress_feed_summary(client, make_client):
+    make_client()
     client.post("/clients/Asha/metrics", json={"weight": 69, "waist": 80, "bodyfat": 18})
     client.post("/clients/Asha/progress", json={"adherence": 80, "week": "Week 01 - 2026"})
     client.post("/clients/Asha/progress", json={"adherence": 100, "week": "Week 02 - 2026"})
