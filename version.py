@@ -5,4 +5,4 @@ git tag (``v<version>``) and the Docker image tag, so a running container can
 always be traced back to the exact commit it was built from.
 """
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"

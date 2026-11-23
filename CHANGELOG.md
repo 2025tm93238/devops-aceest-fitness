@@ -4,6 +4,12 @@ All notable changes to the ACEest Fitness & Gym API. Versions follow
 [Semantic Versioning](https://semver.org/); each release is a git tag
 (`vX.Y.Z`) and a Docker Hub image tag of the same name.
 
+## [2.1.0]
+### Added
+- AI-style weekly workout plan generator (`planner.py`, ported from
+  `Aceestver-3.1.2`): `POST /clients/<name>/program/generate` with
+  `experience` = beginner / intermediate / advanced and optional `seed`.
+
 ## [2.0.0]
 ### Added
 - Role-based authentication (`auth.py`, ported from `Aceestver-3.2.4` login):

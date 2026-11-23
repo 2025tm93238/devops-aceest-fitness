@@ -19,6 +19,7 @@ from auth import require_role
 from db import client_row, close_db, get_db, init_db
 from fitness import PROGRAMS, bmi_category, calculate_bmi, calculate_calories
 from membership import start_trial
+from planner import generate_plan
 from version import __version__
 
 ENDPOINTS = [
@@ -35,6 +36,7 @@ ENDPOINTS = [
     "GET  /clients/<name>/metrics",
     "POST /clients/<name>/progress",
     "GET  /clients/<name>/summary",
+    "POST /clients/<name>/program/generate",
     "DELETE /clients/<name>            (Admin)",
     "GET  /export/clients.csv",
     "POST /auth/login",
@@ -285,6 +287,19 @@ def create_app(database=None):
             workouts_logged=workouts,
             last_metric=dict(last_metric) if last_metric else None,
         )
+
+    @app.post("/clients/<name>/program/generate")
+    def generate_program(name):
+        """AI-style weekly plan based on the client's program and experience."""
+        row = client_row(name)
+        if row is None:
+            return jsonify(error="client not found"), 404
+        data = request.get_json(silent=True) or {}
+        try:
+            plan = generate_plan(row["program"], data.get("experience"), data.get("seed"))
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
+        return jsonify(name=name, program=row["program"], **plan)
 
     @app.get("/export/clients.csv")
     def export_clients_csv():
