@@ -3,9 +3,12 @@
 #
 # The lab VM wipes everything outside ~/workspace when it stops, so this script
 # is idempotent and keeps everything worth keeping under ~/workspace:
-#   ~/workspace/bin         kubectl + minikube binaries (downloaded once)
-#   ~/workspace/.minikube   minikube cache (images, ISO) -> faster restarts
-#   ~/workspace/sonarqube   SonarQube data -> project, quality gate, token survive
+#   ~/workspace/bin              kubectl + minikube binaries (downloaded once)
+#   ~/workspace/minikube-cache   minikube download cache -> faster restarts
+#   ~/workspace/sonarqube        SonarQube data -> project, quality gate, token survive
+#
+# ~/workspace is a network filesystem without file locking, so minikube itself
+# must run from the local disk (~/.minikube); only its cache is copied back.
 #
 # Usage:  ./infra/vm/setup.sh          (run from the repository root)
 set -euo pipefail
@@ -16,7 +19,8 @@ KUBECTL_VERSION=v1.31.0
 MINIKUBE_VERSION=v1.34.0
 K8S_VERSION=v1.31.0
 SONAR_IMAGE=sonarqube:community
-export MINIKUBE_HOME="$WS/.minikube"
+export MINIKUBE_HOME="$HOME/.minikube"
+CACHE="$WS/minikube-cache"
 
 step() { printf '\n\033[1;34m[%s] %s\033[0m\n' "$(date +%H:%M:%S)" "$*"; }
 
@@ -32,8 +36,13 @@ mkdir -p "$BIN"
 chmod +x "$BIN/kubectl" "$BIN/minikube"
 # /usr/local/bin so the jenkins user can run kubectl too (re-installed every session).
 sudo install -m 0755 "$BIN/kubectl" "$BIN/minikube" /usr/local/bin/
-grep -q 'MINIKUBE_HOME' "$HOME/.bashrc" 2>/dev/null || \
-  echo "export MINIKUBE_HOME=$WS/.minikube" >> "$HOME/.bashrc"
+# Earlier versions pointed MINIKUBE_HOME at ~/workspace: undo that.
+sed -i '/MINIKUBE_HOME/d' "$HOME/.bashrc" 2>/dev/null || true
+if [[ -d "$WS/.minikube" ]]; then
+  mkdir -p "$CACHE"
+  cp -rn "$WS/.minikube/cache/." "$CACHE/" 2>/dev/null || true
+  rm -rf "$WS/.minikube"
+fi
 
 step "3/6 Docker access for Jenkins"
 if ! id -nG jenkins | grep -qw docker; then
@@ -56,7 +65,11 @@ fi
 
 step "5/6 Minikube cluster (docker driver, 2 CPU / 2.6 GB)"
 if ! minikube status >/dev/null 2>&1; then
+  minikube delete --all >/dev/null 2>&1 || true
+  mkdir -p "$MINIKUBE_HOME/cache" "$CACHE"
+  cp -rn "$CACHE/." "$MINIKUBE_HOME/cache/" 2>/dev/null || true   # reuse earlier downloads
   minikube start --driver=docker --cpus=2 --memory=2600 --kubernetes-version="$K8S_VERSION"
+  cp -rn "$MINIKUBE_HOME/cache/." "$CACHE/" 2>/dev/null || true   # keep downloads for next session
 fi
 # Give Jenkins its own copy of the kubeconfig (certificates embedded).
 JENKINS_HOME_DIR=$(getent passwd jenkins | cut -d: -f6)

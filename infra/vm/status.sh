@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Toolchain and service status of the ACEest CI/CD environment (screenshot SS1).
-export MINIKUBE_HOME="${MINIKUBE_HOME:-$HOME/workspace/.minikube}"
+export MINIKUBE_HOME="${MINIKUBE_HOME:-$HOME/.minikube}"
 row() { printf '%-14s %s\n' "$1" "$2"; }
 
 echo "===== ACEest CI/CD toolchain on $(hostname) ====="

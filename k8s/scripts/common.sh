@@ -2,6 +2,13 @@
 # Shared settings for the ACEest deployment-strategy scripts.
 set -euo pipefail
 
+# Minikube runs from the local disk on the lab VM (see infra/vm/setup.sh).
+export MINIKUBE_HOME="${MINIKUBE_HOME:-$HOME/.minikube}"
+if ! kubectl config current-context >/dev/null 2>&1; then
+  echo "kubectl has no cluster configured - run ./infra/vm/setup.sh first (Minikube not started)." >&2
+  exit 1
+fi
+
 NS=aceest
 REPO=2025tm93238/aceest-fitness
 STABLE_TAG=${STABLE_TAG:-v2.1.0}   # "current" release in every strategy
