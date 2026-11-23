@@ -16,7 +16,7 @@ from flask import Flask, Response, jsonify, request
 import auth
 import membership
 from auth import require_role
-from db import client_row, close_db, get_db, init_db
+from db import CLIENT_NOT_FOUND, client_row, close_db, get_db, init_db
 from fitness import PROGRAMS, bmi_category, calculate_bmi, calculate_calories
 from membership import membership_state, start_trial
 from planner import generate_plan
@@ -103,7 +103,9 @@ def version_info():
 # ---------- application factory ----------
 
 def create_app(database=None):
-    app = Flask(__name__)
+    # CSRF protection (S4502) does not apply: this is a stateless JSON API that
+    # authenticates with bearer tokens in a header, never with cookies.
+    app = Flask(__name__)  # NOSONAR
     app.config["DATABASE"] = database or os.environ.get("DATABASE", "aceest_fitness.db")
     # Signs auth tokens. Must be identical across replicas, so in Kubernetes it
     # is injected from a Secret; the fallback is for local development only.
@@ -182,14 +184,14 @@ def create_app(database=None):
     def get_client(name):
         row = client_row(name)
         if row is None:
-            return jsonify(error="client not found"), 404
+            return jsonify(error=CLIENT_NOT_FOUND), 404
         return jsonify(dict(row))
 
     @app.delete("/clients/<name>")
     @require_role("Admin")
     def delete_client(name):
         if client_row(name) is None:
-            return jsonify(error="client not found"), 404
+            return jsonify(error=CLIENT_NOT_FOUND), 404
         db = get_db()
         for query in DELETE_CLIENT_QUERIES:
             db.execute(query, (name,))
@@ -200,7 +202,7 @@ def create_app(database=None):
     def client_bmi(name):
         row = client_row(name)
         if row is None:
-            return jsonify(error="client not found"), 404
+            return jsonify(error=CLIENT_NOT_FOUND), 404
         if not row["height"] or not row["weight"]:
             return jsonify(error="client has no height/weight recorded"), 400
         bmi = calculate_bmi(row["weight"], row["height"])
@@ -210,7 +212,7 @@ def create_app(database=None):
     @app.post("/clients/<name>/workouts")
     def log_workout(name):
         if client_row(name) is None:
-            return jsonify(error="client not found"), 404
+            return jsonify(error=CLIENT_NOT_FOUND), 404
         data = request.get_json(silent=True) or {}
         workout_type = (data.get("workout_type") or "").strip()
         if not workout_type:
@@ -233,7 +235,7 @@ def create_app(database=None):
     @app.get("/clients/<name>/workouts")
     def list_workouts(name):
         if client_row(name) is None:
-            return jsonify(error="client not found"), 404
+            return jsonify(error=CLIENT_NOT_FOUND), 404
         rows = get_db().execute(
             "SELECT * FROM workouts WHERE client_name=? ORDER BY date DESC, id DESC",
             (name,),
@@ -243,7 +245,7 @@ def create_app(database=None):
     @app.post("/clients/<name>/metrics")
     def log_metrics(name):
         if client_row(name) is None:
-            return jsonify(error="client not found"), 404
+            return jsonify(error=CLIENT_NOT_FOUND), 404
         data = request.get_json(silent=True) or {}
         db = get_db()
         cur = db.execute(
@@ -263,7 +265,7 @@ def create_app(database=None):
     @app.get("/clients/<name>/metrics")
     def list_metrics(name):
         if client_row(name) is None:
-            return jsonify(error="client not found"), 404
+            return jsonify(error=CLIENT_NOT_FOUND), 404
         rows = get_db().execute(
             "SELECT * FROM metrics WHERE client_name=? ORDER BY date DESC, id DESC",
             (name,),
@@ -273,7 +275,7 @@ def create_app(database=None):
     @app.post("/clients/<name>/progress")
     def log_progress(name):
         if client_row(name) is None:
-            return jsonify(error="client not found"), 404
+            return jsonify(error=CLIENT_NOT_FOUND), 404
         data = request.get_json(silent=True) or {}
         adherence = data.get("adherence")
         if adherence is None:
@@ -291,7 +293,7 @@ def create_app(database=None):
     def client_summary(name):
         row = client_row(name)
         if row is None:
-            return jsonify(error="client not found"), 404
+            return jsonify(error=CLIENT_NOT_FOUND), 404
         return jsonify(client=dict(row), **summary_data(name))
 
     @app.get("/clients/<name>/report.pdf")
@@ -299,7 +301,7 @@ def create_app(database=None):
         """Downloadable PDF report (ported from Aceestver-3.1.2 / 3.2.4)."""
         row = client_row(name)
         if row is None:
-            return jsonify(error="client not found"), 404
+            return jsonify(error=CLIENT_NOT_FOUND), 404
         client = dict(row)
         bmi = None
         if client["height"] and client["weight"]:
@@ -330,7 +332,7 @@ def create_app(database=None):
         """AI-style weekly plan based on the client's program and experience."""
         row = client_row(name)
         if row is None:
-            return jsonify(error="client not found"), 404
+            return jsonify(error=CLIENT_NOT_FOUND), 404
         data = request.get_json(silent=True) or {}
         try:
             plan = generate_plan(row["program"], data.get("experience"), data.get("seed"))

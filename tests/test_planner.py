@@ -38,8 +38,10 @@ def test_no_duplicate_exercise_within_a_day():
 
 
 def test_seed_makes_plan_reproducible():
-    assert generate_plan("Beginner (BG)", "beginner", seed=42) == \
-        generate_plan("Beginner (BG)", "beginner", seed=42)
+    first = generate_plan("Beginner (BG)", "beginner", seed=42)
+    second = generate_plan("Beginner (BG)", "beginner", seed=42)
+    assert first == second
+    assert first is not second
 
 
 def test_invalid_experience_rejected():

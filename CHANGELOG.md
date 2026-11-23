@@ -4,6 +4,17 @@ All notable changes to the ACEest Fitness & Gym API. Versions follow
 [Semantic Versioning](https://semver.org/); each release is a git tag
 (`vX.Y.Z`) and a Docker Hub image tag of the same name.
 
+## [3.0.1]
+### Fixed (found by the SonarQube quality gate)
+- Documented why CSRF protection (S4502) and the seeded random generator (S2245)
+  are safe here, so the security rating reflects real risk.
+- Test asserted a value against an identical expression (S5863).
+- "client not found" literal repeated 11 times -> `CLIENT_NOT_FOUND` constant;
+  unused teardown parameter renamed.
+### Added
+- 16 error-path tests (unknown clients on every endpoint, invalid input, expired
+  token): 71 tests, 99% line coverage.
+
 ## [3.0.0]
 ### Added
 - PDF client report (`reports.py`, ported from `Aceestver-3.1.2` / `3.2.4`):
